@@ -43,9 +43,8 @@
     <div class="container is-max-desktop">
       <div class="columns is-centered">
         <div class="column has-text-centered">
-          <h1 class="title is-1 publication-title" style="font-size:45px;">
-            Fast-FoundationStereo: Real-Time Zero-Shot
-            <br>Stereo Matching
+          <h1 class="title is-1 publication-title" style="font-size:30px; margin-bottom: 5px;">
+            Fast-FoundationStereo: Real-Time Zero-Shot Stereo Matching
           </h1>
           <div class="is-size-5 publication-authors">
             <span class="author-block">
@@ -60,7 +59,7 @@
             <span class="author-block"></sup>NVIDIA</span>
           </div> -->
 
-          <img src="static/media/nvlogo.png" style="max-height: 150px">
+          <img src="static/media/nvlogo.png" style="max-height: 100px; margin-top: -30px; margin-bottom: -10px;">
 
           <!-- <div style="font-size:30px; font-weight: bold;">
             CVPR 2025 <span style="color:red">(Best Paper Nomination)</span>
@@ -70,25 +69,24 @@
             <div class="publication-links">
               <!-- PDF Link. -->
               <span class="link-block">
-                <a href="https://arxiv.org/abs/2501.09898" class="external-link button is-normal is-rounded is-dark">
+                <a href="https://arxiv.org/abs/2512.11130" class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                       <i class="fas fa-file-pdf"></i>
                   </span>
                   <span>Paper</span>
                 </a>
               </span>
-              <!-- Video Link. -->
-              <span class="link-block">
-                <a href="" class="external-link button is-normal is-rounded is-dark">
+              <!-- <span class="link-block">
+                <a href="https://www.youtube.com/watch?v=2BUYZojCzXE" class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                       <i class="fab fa-youtube"></i>
                   </span>
                   <span>Video</span>
                 </a>
-              </span>
+              </span> -->
               <!-- Code Link. -->
               <span class="link-block">
-                <a href="https://github.com/NVlabs/FoundationStereo/" class="external-link button is-normal is-rounded is-dark">
+                <a href="https://github.com/NVlabs/Fast-FoundationStereo" class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                       <i class="fab fa-github"></i>
                   </span>
@@ -109,7 +107,7 @@
 <section class="section">
   <div class="container">
     <!-- Abstract. -->
-    <div class="columns is-centered has-text-centered" style="margin-bottom: 0;">
+    <div class="columns is-centered has-text-centered" style="margin-bottom: 0; margin-top: -100px;">
       <div class="column is-four-fifths content-block-outline">
         <h2 class="title is-3">Abstract</h2>
         <div class="content has-text-justified">
@@ -117,11 +115,11 @@
           </p>
         </div>
         <img src="static/media/intro.jpg" width="100%">
-        <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 20px;">
-          <video autoplay loop muted playsinline style="height: 340px; width: auto; border: 1px solid #ddd; border-radius: 0px;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 20px; margin-top: 20px; height: clamp(100px, 20vw, 350px);">
+          <video autoplay loop muted playsinline style="height: 100%; width: auto; object-fit: contain; max-width: 49%; border: 1px solid #ddd; border-radius: 0px;">
             <source src="static/media/intro_c.mp4" type="video/mp4">
           </video>
-          <img src="static/media/bp2_vs_runtime.jpg" style="height: 340px; width: auto; border: 1px solid #ddd; border-radius: 0px;">
+          <img src="static/media/bp2_vs_runtime.jpg" style="height: 100%; width: auto; object-fit: contain; max-width: 49%; border: 1px solid #ddd; border-radius: 0px;">
         </div>
       </div>
       </div>
@@ -247,6 +245,15 @@
             });
           }
         </script>
+
+      <p style="text-align: left;">
+        Below are more zero-shot comparisons among real-time methods.
+        <sup>&#8224;</sup> Denotes training on the exact same datasets as ours (including our proposed pseudo-labels).
+        Our pseudo-labeled internet data consistently enhances the generalization across different methods.
+        However, our model demonstrates strongest robustness, validating the effectiveness of both our model design and pseudo-labeling.
+      </p>
+      <img src="static/media/zero_shot_compare1.jpg" width="100%" style="margin-top: 10px">
+      <img src="static/media/zero_shot_compare2.jpg" width="100%" style="margin-top: 10px">
       </div>
     </div>
 
@@ -281,16 +288,16 @@
       </div>
     </div>
 
-    <br>
+    <!-- <br>
     <br>
     <div class="columns is-centered has-text-centered">
       <div class="column is-four-fifths content-block-outline">
         <h2 class="title is-3">Full Video</h2>
         <div class="publication-video">
-          <iframe src="https://www.youtube.com/embed/R7RgHxEXB3o?si=NBHsVaZSOjGOLN03" style="border: 5px solid black" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+          <iframe src="https://www.youtube.com/embed/2BUYZojCzXE?si=cOmbAPuKpKbmhY9Z" style="border: 2px solid black; border-radius: 0px;" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
         </div>
       </div>
-    </div>
+    </div> -->
 
 <section class="section" id="BibTeX">
   <div class="container is-max-desktop content">
