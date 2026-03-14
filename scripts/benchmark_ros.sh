@@ -45,7 +45,7 @@ run_benchmark() {
     local pid=$!
 
     # 挂一个订阅者触发推理（节点检测到有订阅才会跑）
-    rostopic hz /foundation_stereo/depth/image_raw > /dev/null 2>&1 &
+    rostopic hz /camera/depth/image_raw > /dev/null 2>&1 &
     local sub_pid=$!
 
     # 等待预热

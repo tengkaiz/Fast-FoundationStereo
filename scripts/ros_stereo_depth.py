@@ -376,10 +376,10 @@ class StereoDepthNode:
         raise ValueError(f"不支持的 backend: {self.args.backend}")
 
     def _setup_ros(self):
-        self.depth_pub = rospy.Publisher("/foundation_stereo/depth/image_raw", Image, queue_size=1)
-        self.depth_info_pub = rospy.Publisher("/foundation_stereo/depth/camera_info", CameraInfo, queue_size=1)
-        self.disp_pub = rospy.Publisher("/foundation_stereo/disparity", Image, queue_size=1)
-        self.pc_pub = rospy.Publisher("/foundation_stereo/point_cloud", PointCloud2, queue_size=1)
+        self.depth_pub = rospy.Publisher("/camera/depth/image_raw", Image, queue_size=1)
+        self.depth_info_pub = rospy.Publisher("/camera/depth/camera_info", CameraInfo, queue_size=1)
+        self.disp_pub = rospy.Publisher("/camera/depth/disparity", Image, queue_size=1)
+        self.pc_pub = rospy.Publisher("/camera/depth/points", PointCloud2, queue_size=1)
 
         self._get_camera_info()
         rospy.Subscriber(self.args.left_topic, Image, self._left_cb, queue_size=1, buff_size=2**24)
