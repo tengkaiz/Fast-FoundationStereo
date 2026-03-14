@@ -35,10 +35,13 @@ PointCloud2 = None
 PointField = None
 Header = None
 CvBridge = None
+tf2_ros = None
+tf_transformations = None
 
 
 def ensure_ros_imported():
     global rospy, Image, CameraInfo, PointCloud2, PointField, Header, CvBridge
+    global tf2_ros, tf_transformations
     if rospy is not None:
         return
 
@@ -50,6 +53,8 @@ def ensure_ros_imported():
         from sensor_msgs.msg import PointCloud2 as _PointCloud2
         from sensor_msgs.msg import PointField as _PointField
         from std_msgs.msg import Header as _Header
+        import tf2_ros as _tf2_ros
+        import tf.transformations as _tf_transformations
     except ImportError as exc:
         raise ImportError("需要 ROS 环境，请先 source /opt/ros/<distro>/setup.bash") from exc
 
@@ -60,6 +65,8 @@ def ensure_ros_imported():
     PointField = _PointField
     Header = _Header
     CvBridge = _CvBridge
+    tf2_ros = _tf2_ros
+    tf_transformations = _tf_transformations
 
 
 def build_point_cloud2(header, points, colors):
@@ -112,13 +119,13 @@ def normalize_cli_value(value):
 
 def build_parser():
     default_model_dir = os.path.join(code_dir, "..", "weights/23-36-37/model_best_bp2_serialize.pth")
-    default_onnx_dir = os.path.join(code_dir, "..", "output")
+    default_onnx_dir = os.path.join(code_dir, "..", "output/23-36-37")
     parser = argparse.ArgumentParser(
         description="ROS 实时双目深度推理节点",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument("--backend", type=str, choices=["pytorch", "tensorrt"], default="pytorch", help="选择推理后端")
+    parser.add_argument("--backend", type=str, choices=["pytorch", "tensorrt"], default="tensorrt", help="选择推理后端")
 
     parser.add_argument("--model_dir", type=str, default=default_model_dir)
     parser.add_argument("--onnx_dir", type=str, default=default_onnx_dir)
@@ -151,9 +158,14 @@ def build_parser():
         type=int,
         nargs=2,
         metavar=("HEIGHT", "WIDTH"),
-        default=[],
+        default=[480, 640],
         help="TensorRT engine 对应的输入尺寸",
     )
+
+    # 深度配准：将深度从 left IR 坐标系对齐到 RGB 坐标系
+    parser.add_argument("--depth_registration", type=int, default=1,
+                        help="深度配准到RGB相机: 0=关(输出left_ir坐标系), 1=开(输出color坐标系)")
+    parser.add_argument("--color_info_topic", type=str, default="/camera/color/camera_info")
 
     parser.add_argument("--frame_id", type=str, default="camera_left_ir_optical_frame")
     parser.add_argument("--left_topic", type=str, default="/camera/left_ir/image_raw")
@@ -341,6 +353,9 @@ class StereoDepthNode:
 
         self.K = None
         self.baseline = None
+        # 深度配准：left_ir → color
+        self.K_color = None
+        self.T_ir2color = None  # 4x4 变换矩阵
 
         self._frame_count = 0
         self._total_infer_time = 0.0
@@ -361,7 +376,8 @@ class StereoDepthNode:
         raise ValueError(f"不支持的 backend: {self.args.backend}")
 
     def _setup_ros(self):
-        self.depth_pub = rospy.Publisher("/foundation_stereo/depth", Image, queue_size=1)
+        self.depth_pub = rospy.Publisher("/foundation_stereo/depth/image_raw", Image, queue_size=1)
+        self.depth_info_pub = rospy.Publisher("/foundation_stereo/depth/camera_info", CameraInfo, queue_size=1)
         self.disp_pub = rospy.Publisher("/foundation_stereo/disparity", Image, queue_size=1)
         self.pc_pub = rospy.Publisher("/foundation_stereo/point_cloud", PointCloud2, queue_size=1)
 
@@ -385,9 +401,75 @@ class StereoDepthNode:
             rospy.logwarn(f"基线异常: {self.baseline:.6f}m, P_right={right_info.P}")
 
         rospy.loginfo(
-            f"内参 fx={fx:.2f} fy={self.K[1, 1]:.2f} cx={self.K[0, 2]:.2f} "
+            f"Left IR 内参 fx={fx:.2f} fy={self.K[1, 1]:.2f} cx={self.K[0, 2]:.2f} "
             f"cy={self.K[1, 2]:.2f} | 基线={self.baseline:.4f}m"
         )
+
+        # 深度配准：获取 RGB 内参和 left_ir → color 变换
+        if self.args.get("depth_registration", 0):
+            color_info = rospy.wait_for_message(self.args.color_info_topic, CameraInfo, timeout=15.0)
+            self.K_color = np.array(color_info.K, dtype=np.float32).reshape(3, 3)
+
+            # 从 TF 获取 left_ir_optical → color_optical 的变换
+            tf_buffer = tf2_ros.Buffer()
+            tf2_ros.TransformListener(tf_buffer)
+            rospy.sleep(1.0)  # 等待 TF 缓冲
+            try:
+                trans = tf_buffer.lookup_transform(
+                    "camera_color_optical_frame",
+                    "camera_left_ir_optical_frame",
+                    rospy.Time(0),
+                    rospy.Duration(5.0),
+                )
+                t = trans.transform.translation
+                q = trans.transform.rotation
+                self.T_ir2color = tf_transformations.quaternion_matrix([q.x, q.y, q.z, q.w])
+                self.T_ir2color[:3, 3] = [t.x, t.y, t.z]
+            except Exception as e:
+                rospy.logerr(f"获取 TF 变换失败: {e}，禁用深度配准")
+                self.T_ir2color = None
+
+            if self.T_ir2color is not None:
+                # 预计算配准常量（GPU tensor），避免每帧重复计算和 CPU-GPU 传输
+                H, W = left_info.height, left_info.width
+                self._reg_R = torch.from_numpy(self.T_ir2color[:3, :3].astype(np.float32)).cuda()
+                self._reg_t = torch.from_numpy(self.T_ir2color[:3, 3].astype(np.float32)).cuda()
+                self._reg_u_norm = torch.from_numpy(
+                    ((np.arange(W, dtype=np.float32) - self.K[0, 2]) / self.K[0, 0])
+                ).cuda()
+                self._reg_v_norm = torch.from_numpy(
+                    ((np.arange(H, dtype=np.float32) - self.K[1, 2]) / self.K[1, 1])
+                ).cuda()
+                self._reg_fx_c = float(self.K_color[0, 0])
+                self._reg_fy_c = float(self.K_color[1, 1])
+                self._reg_cx_c = float(self.K_color[0, 2])
+                self._reg_cy_c = float(self.K_color[1, 2])
+                self._reg_H = H
+                self._reg_W = W
+
+                rospy.loginfo(
+                    f"RGB 内参 fx={self.K_color[0,0]:.2f} fy={self.K_color[1,1]:.2f} "
+                    f"cx={self.K_color[0,2]:.2f} cy={self.K_color[1,2]:.2f} | "
+                    f"IR→Color 平移=[{self.T_ir2color[0,3]*1000:.1f}, "
+                    f"{self.T_ir2color[1,3]*1000:.1f}, {self.T_ir2color[2,3]*1000:.1f}]mm"
+                )
+
+        # 构建 depth camera_info 模板（配准后用 RGB 内参，否则用 IR 内参）
+        K_out = self.K_color if self.T_ir2color is not None else self.K
+        frame_out = "camera_color_optical_frame" if self.T_ir2color is not None else self.args.frame_id
+        self._depth_camera_info = CameraInfo()
+        self._depth_camera_info.header.frame_id = frame_out
+        self._depth_camera_info.height = left_info.height
+        self._depth_camera_info.width = left_info.width
+        self._depth_camera_info.distortion_model = "plumb_bob"
+        self._depth_camera_info.D = [0.0] * 5
+        self._depth_camera_info.K = K_out.flatten().tolist()
+        self._depth_camera_info.R = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        self._depth_camera_info.P = [
+            K_out[0, 0], 0, K_out[0, 2], 0,
+            0, K_out[1, 1], K_out[1, 2], 0,
+            0, 0, 1, 0,
+        ]
 
     def _left_cb(self, msg):
         with self._buf_lock:
@@ -492,6 +574,45 @@ class StereoDepthNode:
         depth_out[edge_mask] = 0.0
         return depth_out
 
+    def _register_depth_to_color(self, depth_ir):
+        """
+        GPU 深度配准：left IR → RGB 坐标系。
+        全程 GPU 计算，scatter_reduce_ 做并行 z-buffer。
+        """
+        H, W = self._reg_H, self._reg_W
+        if not isinstance(depth_ir, np.ndarray):
+            depth_ir = np.asarray(depth_ir)
+        depth_t = torch.as_tensor(depth_ir, device="cuda", dtype=torch.float32)
+        valid = depth_t > 0
+        if not valid.any():
+            return np.zeros((H, W), dtype=np.float32)
+
+        v_idx, u_idx = torch.where(valid)
+        z = depth_t[v_idx, u_idx]
+
+        # IR 像素 → 3D（预计算归一化坐标）→ color 坐标系
+        x_ir = self._reg_u_norm[u_idx] * z
+        y_ir = self._reg_v_norm[v_idx] * z
+        R, t = self._reg_R, self._reg_t
+        x_c = R[0, 0] * x_ir + R[0, 1] * y_ir + R[0, 2] * z + t[0]
+        y_c = R[1, 0] * x_ir + R[1, 1] * y_ir + R[1, 2] * z + t[1]
+        z_c = R[2, 0] * x_ir + R[2, 1] * y_ir + R[2, 2] * z + t[2]
+
+        # 投影到 RGB 像素并过滤越界
+        inv_z = 1.0 / z_c
+        u_c = torch.round(self._reg_fx_c * x_c * inv_z + self._reg_cx_c).long()
+        v_c = torch.round(self._reg_fy_c * y_c * inv_z + self._reg_cy_c).long()
+        in_bounds = (z_c > 0) & (u_c >= 0) & (u_c < W) & (v_c >= 0) & (v_c < H)
+        linear_idx = v_c[in_bounds] * W + u_c[in_bounds]
+        z_valid = z_c[in_bounds]
+
+        # GPU 并行 z-buffer：scatter_reduce 取最小深度
+        depth_flat = torch.full((H * W,), float("inf"), device="cuda", dtype=torch.float32)
+        depth_flat.scatter_reduce_(0, linear_idx, z_valid.float(), reduce="amin", include_self=True)
+        depth_flat[torch.isinf(depth_flat)] = 0.0
+
+        return depth_flat.reshape(H, W).cpu().numpy()
+
     def _infer_and_publish(self, left_msg, right_msg, pub_depth, pub_disp, pub_pc):
         t_start = time.perf_counter()
         # 取帧延迟：从相机采集到开始处理的时间
@@ -549,11 +670,19 @@ class StereoDepthNode:
         # 边缘飞点过滤
         if self.args.get("edge_filter", 0):
             depth = self._filter_edge_flying_pixels(depth, zmin)
+        t_post_edge = time.perf_counter()
+
+        # 深度配准：left IR → RGB
+        if self.T_ir2color is not None:
+            depth = self._register_depth_to_color(depth)
+            K = self.K_color
+            frame_id = "camera_color_optical_frame"
+        else:
+            frame_id = self.args.frame_id
         t_post = time.perf_counter()
 
         # --- 发布 ---
         stamp = left_msg.header.stamp
-        frame_id = self.args.frame_id
 
         if pub_depth:
             if self.args.get("depth_format", "32fc1_m") == "16uc1_mm":
@@ -564,6 +693,11 @@ class StereoDepthNode:
             depth_msg.header.stamp = stamp
             depth_msg.header.frame_id = frame_id
             self.depth_pub.publish(depth_msg)
+
+            # 同步发布 camera_info
+            info_msg = self._depth_camera_info
+            info_msg.header.stamp = stamp
+            self.depth_info_pub.publish(info_msg)
 
         if pub_disp:
             disp_msg = self.bridge.cv2_to_imgmsg(disp_np.astype(np.float32), encoding="32FC1")
@@ -592,7 +726,8 @@ class StereoDepthNode:
         dt_invis = (t_post_invis - t_infer) * 1000
         dt_depth = (t_post_depth - t_post_invis) * 1000
         dt_denoise = (t_post_denoise - t_post_depth) * 1000
-        dt_edge = (t_post - t_post_denoise) * 1000
+        dt_edge = (t_post_edge - t_post_denoise) * 1000
+        dt_reg = (t_post - t_post_edge) * 1000
         dt_pub = (t_pub - t_post) * 1000
         dt_total = (t_pub - t_start) * 1000
 
@@ -605,7 +740,8 @@ class StereoDepthNode:
             rospy.loginfo(
                 f"[统计] 帧#{self._frame_count} | "
                 f"预处理 {dt_pre:.1f} | 推理 {dt_infer:.1f} | "
-                f"去遮挡 {dt_invis:.1f} | 转深度 {dt_depth:.1f} | 去噪 {dt_denoise:.1f} | 去飞点 {dt_edge:.1f} | "
+                f"去遮挡 {dt_invis:.1f} | 转深度 {dt_depth:.1f} | 去噪 {dt_denoise:.1f} | "
+                f"去飞点 {dt_edge:.1f} | 配准 {dt_reg:.1f} | "
                 f"发布 {dt_pub:.1f} | 总计 {dt_total:.0f}ms | "
                 f"平均 {avg:.0f}ms ({1000/avg:.1f}FPS) | "
                 f"取帧延迟 {grab_lag*1000:.0f}ms | 端到端 {end_lag*1000:.0f}ms"
