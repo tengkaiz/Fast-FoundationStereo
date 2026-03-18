@@ -51,7 +51,9 @@ python scripts/run_demo_tensorrt.py \
 
 ## ROS Node
 
-Requires ROS Noetic.
+Requires ROS Noetic. The node subscribes to stereo image topics, runs inference, and publishes depth + point cloud.
+
+### Quick Start
 
 ```bash
 bash scripts/run_ros_depth.sh                     # TRT + 23-36-37
@@ -59,7 +61,33 @@ bash scripts/run_ros_depth.sh 20-30-48             # TRT + fastest
 bash scripts/run_ros_depth.sh 23-36-37 pytorch     # PyTorch backend
 ```
 
-Published topics:
+### Adapting to Your Camera
+
+The default topics are configured for Orbbec Gemini 330 IR stereo. To use a different camera, override the topic arguments:
+
+```bash
+python scripts/ros_stereo_depth.py \
+    --backend tensorrt --onnx_dir output/23-36-37/ \
+    --left_topic       /your_camera/left/image_raw \
+    --right_topic      /your_camera/right/image_raw \
+    --left_info_topic  /your_camera/left/camera_info \
+    --right_info_topic /your_camera/right/camera_info \
+    --frame_id         your_camera_optical_frame
+```
+
+If using depth registration (IR → RGB alignment), also set:
+```bash
+    --depth_registration 1 \
+    --color_info_topic /your_camera/color/camera_info
+```
+This requires a TF transform from `--frame_id` to `camera_color_optical_frame` to be published by your camera driver.
+
+If not using IR stereo (e.g. RGB stereo), disable registration:
+```bash
+    --depth_registration 0
+```
+
+### Published Topics
 
 | Topic | Type |
 |-------|------|
