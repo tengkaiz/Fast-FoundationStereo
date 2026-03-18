@@ -12,3 +12,4 @@ weights/*
 output/
 .claude/
 output.zip
+docs/

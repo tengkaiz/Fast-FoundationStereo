@@ -9,11 +9,6 @@
 #   bash scripts/run_ros_depth.sh 20-26-39              # TRT + 20-26-39
 #   bash scripts/run_ros_depth.sh 23-36-37 pytorch      # PyTorch + 23-36-37
 #
-# 前提：
-#   1. roscore 已启动
-#   2. 相机驱动已启动（关闭深度和点云流以避免话题冲突）：
-#      roslaunch orbbec_camera gemini_330_series.launch \
-#        enable_depth=false enable_point_cloud=false
 
 set -e
 
