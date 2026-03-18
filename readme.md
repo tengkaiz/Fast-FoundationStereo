@@ -1,6 +1,6 @@
 # Fast-FoundationStereo: Real-Time Zero-Shot Stereo Matching
 
-This is the official implementation of our paper accepted to CVPR 2026
+Based on the [official implementation](https://github.com/NVlabs/Fast-FoundationStereo) (CVPR 2026). **This fork adds TensorRT acceleration, ROS real-time node, and depth post-processing.** See [USAGE.md](USAGE.md) for details.
 
 [[Website]](https://nvlabs.github.io/Fast-FoundationStereo/) [[Paper]](https://arxiv.org/abs/2512.11130) [[Video]](https://www.youtube.com/watch?v=2BUYZojCzXE)
 
